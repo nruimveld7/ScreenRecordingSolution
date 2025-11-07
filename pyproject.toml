@@ -1,0 +1,12 @@
+# pyproject.toml (repo root)
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+
+[tool.ruff]
+line-length = 88
+select = ["E", "W", "F", "B", "I", "N", "A"]
+fix = true

@@ -3,77 +3,71 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace ScreenRecorderTray
-{
+namespace ScreenRecorderTray {
     /// <summary>
     /// Windows Job Object wrapper with KILL_ON_JOB_CLOSE.
     /// Uses OpenProcess with required rights and skips assignment if process is already in a job (common on Win7 in some contexts).
     /// </summary>
-    public sealed class WinJob : IDisposable
-    {
+    public sealed class WinJob : IDisposable {
         private IntPtr m_handle;
 
-        public WinJob()
-        {
+        public WinJob() {
             m_handle = CreateJobObject(IntPtr.Zero, null);
-            if (m_handle == IntPtr.Zero) throw new Win32Exception();
+            if(m_handle == IntPtr.Zero)
+                throw new Win32Exception();
 
             var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
             info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
 
             int length = Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
             IntPtr ptr = Marshal.AllocHGlobal(length);
-            try
-            {
+            try {
                 Marshal.StructureToPtr(info, ptr, false);
-                if (!SetInformationJobObject(m_handle, JobObjectInfoType.ExtendedLimitInformation, ptr, (uint)length))
+                if(!SetInformationJobObject(m_handle, JobObjectInfoType.ExtendedLimitInformation, ptr, (uint)length))
                     throw new Win32Exception();
-            }
-            finally { Marshal.FreeHGlobal(ptr); }
+            } finally { Marshal.FreeHGlobal(ptr); }
         }
 
-        public bool Assign(Process process)
-        {
-            if (process == null) throw new ArgumentNullException("process");
+        public bool Assign(Process process) {
+            if(process == null)
+                throw new ArgumentNullException("process");
             return Assign(process.Id);
         }
 
-        public bool Assign(int pid)
-        {
-            IntPtr ph = IntPtr.Zero;
-            try
-            {
-                ph = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION | PROCESS_DUP_HANDLE | SYNCHRONIZE, false, pid);
-                if (ph == IntPtr.Zero) throw new Win32Exception();
+        public bool Assign(int pid) {
+            IntPtr processHandle = IntPtr.Zero;
+            try {
+                processHandle = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION | PROCESS_DUP_HANDLE | SYNCHRONIZE, false, pid);
+                if(processHandle == IntPtr.Zero) {
+                    throw new Win32Exception();
+                }
 
                 bool childInJob;
-                if (!IsProcessInJob(ph, IntPtr.Zero, out childInJob))
+                if(!IsProcessInJob(processHandle, IntPtr.Zero, out childInJob)) {
                     throw new Win32Exception();
+                }
 
-                if (childInJob)
-                {
+                if(childInJob) {
                     // Cannot assign a process that's already in a job on Win7.
                     return false;
                 }
 
-                if (!AssignProcessToJobObject(m_handle, ph))
-                {
-                    int err = Marshal.GetLastWin32Error();
-                    if (err == 5 /*ACCESS_DENIED*/) return false;
-                    throw new Win32Exception(err);
+                if(!AssignProcessToJobObject(m_handle, processHandle)) {
+                    int error = Marshal.GetLastWin32Error();
+                    if(error == 5 /*ACCESS_DENIED*/) {
+                        return false;
+                    }
+                    throw new Win32Exception(error);
                 }
                 return true;
-            }
-            finally
-            {
-                if (ph != IntPtr.Zero) CloseHandle(ph);
+            } finally {
+                if(processHandle != IntPtr.Zero)
+                    CloseHandle(processHandle);
             }
         }
 
-        public void Dispose()
-        {
-            if (m_handle != IntPtr.Zero)
-            {
+        public void Dispose() {
+            if(m_handle != IntPtr.Zero) {
                 CloseHandle(m_handle);
                 m_handle = IntPtr.Zero;
             }
@@ -89,14 +83,12 @@ namespace ScreenRecorderTray
         private const uint PROCESS_QUERY_INFORMATION = 0x0400;
         private const uint SYNCHRONIZE = 0x00100000;
 
-        private enum JobObjectInfoType
-        {
+        private enum JobObjectInfoType {
             ExtendedLimitInformation = 9
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct IO_COUNTERS
-        {
+        private struct IO_COUNTERS {
             public ulong ReadOperationCount;
             public ulong WriteOperationCount;
             public ulong OtherOperationCount;
@@ -106,8 +98,7 @@ namespace ScreenRecorderTray
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct JOBOBJECT_BASIC_LIMIT_INFORMATION
-        {
+        private struct JOBOBJECT_BASIC_LIMIT_INFORMATION {
             public long PerProcessUserTimeLimit;
             public long PerJobUserTimeLimit;
             public int LimitFlags;
@@ -120,8 +111,7 @@ namespace ScreenRecorderTray
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
-        {
+        private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
             public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
             public IO_COUNTERS IoInfo;
             public UIntPtr ProcessMemoryLimit;
@@ -143,7 +133,7 @@ namespace ScreenRecorderTray
         private static extern bool CloseHandle(IntPtr hObject);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool IsProcessInJob(IntPtr ProcessHandle, IntPtr JobHandle, out bool Result);
+        private static extern bool IsProcessInJob(IntPtr processHandle, IntPtr jobHandle, out bool result);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, int dwProcessId);
