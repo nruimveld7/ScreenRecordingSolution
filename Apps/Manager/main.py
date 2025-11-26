@@ -30,6 +30,7 @@ from Manager.server import app as manager_app
 
 _LOGGER = logging.getLogger("manager.service")
 _RUN_MODE: str = "unknown"
+_SHUTDOWN_ONCE = threading.Event()
 
 
 class SkipSuccessfulUploads(logging.Filter):
@@ -70,6 +71,17 @@ def _base_dir() -> Path:
 
 def _should_log_to_console() -> bool:
     return not _is_frozen() and sys.stderr.isatty()
+
+
+def _shutdown_runtime() -> None:
+    if _SHUTDOWN_ONCE.is_set():
+        return
+    _SHUTDOWN_ONCE.set()
+    try:
+        config.stop_watcher()
+    except Exception:
+        _LOGGER.exception("Failed to stop config watcher cleanly during shutdown.")
+    logging.shutdown()
 
 
 def _build_log_config() -> Dict[str, Any]:

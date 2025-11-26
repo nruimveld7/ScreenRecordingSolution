@@ -21,6 +21,7 @@ namespace ScreenRecorderTray {
         private WinJob _job; // ensures child is killed when app exits
         private readonly object _gate = new object();
         private CancellationTokenSource _runCts;
+        private int? _lastFfmpegPid;
 
         private string _baseDir;
         private string _iniPath;
@@ -273,6 +274,7 @@ namespace ScreenRecorderTray {
                     ScheduleDelayedRestart();
                 };
                 _ffmpeg.Start();
+                _lastFfmpegPid = _ffmpeg.Id;
                 _ffmpeg.BeginOutputReadLine();
                 _ffmpeg.BeginErrorReadLine();
                 _job = new WinJob();
@@ -455,6 +457,7 @@ namespace ScreenRecorderTray {
             }
             Process p = null;
             WinJob job = null;
+            int? pid = null;
             lock(_gate) {
                 if(_runCts != null) {
                     _runCts.Cancel();
@@ -463,6 +466,11 @@ namespace ScreenRecorderTray {
                 }
                 p = _ffmpeg;
                 job = _job;
+                if(_ffmpeg != null) {
+                    pid = _ffmpeg.Id;
+                } else if(_lastFfmpegPid.HasValue) {
+                    pid = _lastFfmpegPid;
+                }
                 _ffmpeg = null;
                 _job = null;
             }
@@ -479,32 +487,18 @@ namespace ScreenRecorderTray {
                         }
                         if(!p.WaitForExit(2000)) {
                             try {
-                                if(job != null) {
-                                    job.Dispose();
-                                }
+                                job?.Dispose(); // KILL_ON_JOB_CLOSE
                             } catch {
                                 // ignore
                             }
-                            if(!p.WaitForExit(1500)) {
-                                try {
-                                    var tk = Process.Start(new ProcessStartInfo {
-                                        FileName = "taskkill.exe",
-                                        Arguments = "/PID " + p.Id + " /T /F",
-                                        CreateNoWindow = true,
-                                        UseShellExecute = false
-                                    });
-                                    if(tk != null) {
-                                        tk.WaitForExit(2000);
-                                    }
-                                } catch {
-                                    // ignore
-                                }
-                                try {
-                                    if(!p.HasExited)
-                                        p.Kill();
-                                } catch {
-                                    // ignore
-                                }
+                            if(pid.HasValue && !WaitForExitByPid(pid.Value, 1500)) {
+                                KillFfmpegByPid(pid.Value);
+                            }
+                        } else {
+                            try {
+                                job?.Dispose();
+                            } catch {
+                                // ignore
                             }
                         }
                     }
@@ -516,32 +510,87 @@ namespace ScreenRecorderTray {
                     }
                 }
             }
+            if(job != null) {
+                try {
+                    job.Dispose();
+                } catch {
+                    // ignore
+                }
+            }
+            if(pid.HasValue) {
+                if(!IsProcessAlive(pid.Value)) {
+                    _lastFfmpegPid = null;
+                } else {
+                    _lastFfmpegPid = pid;
+                }
+            } else {
+                _lastFfmpegPid = null;
+            }
             _tray.Text = "Screen Recorder (idle)";
             return Task.CompletedTask;
         }
 
 
         private void ForceKillFfmpegTree() {
-            Process p = _ffmpeg;
-            if(p == null) {
-                return;
+            int? pid = null;
+            WinJob job = null;
+            lock(_gate) {
+                if(_ffmpeg != null && !_ffmpeg.HasExited) {
+                    pid = _ffmpeg.Id;
+                } else if(_lastFfmpegPid.HasValue) {
+                    pid = _lastFfmpegPid;
+                }
+                job = _job;
             }
             try {
-                if(!p.HasExited) {
-                    try {
-                        if(_job != null) {
-                            _job.Dispose();
-                        }
-                    } catch {
-                        // ignore
-                    }
-                    try {
-                        if(!p.HasExited) {
-                            p.Kill();
-                        }
-                    } catch {
-                        // ignore
-                    }
+                job?.Dispose();
+            } catch {
+                // ignore
+            }
+            if(pid.HasValue) {
+                KillFfmpegByPid(pid.Value);
+                if(!IsProcessAlive(pid.Value)) {
+                    _lastFfmpegPid = null;
+                }
+            }
+        }
+
+        private static bool WaitForExitByPid(int pid, int timeoutMs) {
+            try {
+                var proc = Process.GetProcessById(pid);
+                return proc.WaitForExit(timeoutMs);
+            } catch {
+                return true;
+            }
+        }
+
+        private static bool IsProcessAlive(int pid) {
+            try {
+                var proc = Process.GetProcessById(pid);
+                return !proc.HasExited;
+            } catch {
+                return false;
+            }
+        }
+
+        private void KillFfmpegByPid(int pid) {
+            try {
+                var tk = Process.Start(new ProcessStartInfo {
+                    FileName = "taskkill.exe",
+                    Arguments = "/PID " + pid + " /T /F",
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                });
+                if(tk != null) {
+                    tk.WaitForExit(2000);
+                }
+            } catch {
+                // ignore
+            }
+            try {
+                var proc = Process.GetProcessById(pid);
+                if(!proc.HasExited) {
+                    proc.Kill();
                 }
             } catch {
                 // ignore

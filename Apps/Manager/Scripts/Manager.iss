@@ -65,7 +65,8 @@ Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Com
 Filename: "{cmd}"; Parameters: "/c sc.exe stop ""SRSManager"" >nul 2>&1 || exit /b 0"; Flags: runhidden waituntilterminated; RunOnceId: StopSRSManagerService
 Filename: "{cmd}"; Parameters: "/c taskkill /IM ""Manager.exe"" /F >nul 2>&1 || exit /b 0"; Flags: runhidden waituntilterminated; RunOnceId: KillSRSManagerProcesses
 Filename: "{cmd}"; Parameters: "/c sc.exe delete ""SRSManager"" >nul 2>&1 || exit /b 0"; Flags: runhidden waituntilterminated; RunOnceId: DeleteSRSManagerService
-Filename: "{cmd}"; Parameters: "/c net share ""Recordings"" /DELETE >nul 2>&1 || exit /b 0"; Flags: runhidden waituntilterminated; RunOnceId: RemoveSRSRecordingShare
+; /Y suppresses the confirmation prompt if the share is in use so the uninstaller can't hang waiting for input
+Filename: "{cmd}"; Parameters: "/c net share ""Recordings"" /DELETE /Y >nul 2>&1 || exit /b 0"; Flags: runhidden waituntilterminated; RunOnceId: RemoveSRSRecordingShare
 Filename: "{cmd}"; Parameters: "/c if exist ""{app}"" rd /s /q ""{app}"""; Flags: runhidden waituntilterminated; RunOnceId: RemoveSRSManagerDirectory
 
 [Code]
